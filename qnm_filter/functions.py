@@ -362,6 +362,7 @@ def find_likelihood(parameters, biased_strain, noise, strain, modes, mass_inc = 
     mass_grid, chi_grid = np.meshgrid(massspace, chispace)
     likelihood_data, _ = qnm_filter.parallel_compute(fit, massspace, chispace, 
                                                  num_cpu = -1 ,model_list = modes)
+    print(likelihood_data[0])
     credible_region = qnm_filter.find_credible_region(likelihood_data)
     return likelihood_data, credible_region, mass_grid, chi_grid
 
