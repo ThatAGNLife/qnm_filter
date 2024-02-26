@@ -1,7 +1,11 @@
 import matplotlib.pyplot as plt
 import numpy as np
 import astropy.constants as c
-import qnm_filter
+from .Network import *
+from .gw_data import *
+from .utility import *
+from .bilby_helper import *
+from .sxs_helper import *
 import seaborn as sns
 from mpl_toolkits.axes_grid1.axes_divider import make_axes_locatable
 from matplotlib.ticker import MultipleLocator
@@ -36,7 +40,7 @@ def get_freq_list_si(freq_list, parameters):
     keyslist = list(freq_list.keys())
     for i in keyslist:
         freq_sim = freq_list[i]
-        freq_si = freq_sim/qnm_filter.Filter.mass_unit(parameters['rem_m']*parameters['bbh_m'])/2/np.pi
+        freq_si = freq_sim/Filter.mass_unit(parameters['rem_m']*parameters['bbh_m'])/2/np.pi
         freq_list_si[i] = freq_si
     return freq_list_si
 
@@ -89,7 +93,7 @@ def get_NR_strain(bilby_ifo, parameters, NRwaveform, modes):
     fp = bilby_ifo.antenna_response(ra, dec, time[0], psi, 'plus')
     fc = bilby_ifo.antenna_response(ra, dec, time[0], psi, 'cross')
 
-    return qnm_filter.RealData(hplus*fp+hcross*fc, index=time, ifo=bilby_ifo.name)
+    return RealData(hplus*fp+hcross*fc, index=time, ifo=bilby_ifo.name)
 
 def error_profile(error_param, param, strain, lines = [], plots = True): 
 
@@ -119,8 +123,8 @@ def error_profile(error_param, param, strain, lines = [], plots = True):
     """
 
     name = error_param['name']
-    centre = error_param['centre']
-    width = error_param['width']
+    centre = error_param['centre']*2*np.pi
+    width = error_param['width']*2*np.pi
     amp = error_param['amp']
     angle = error_param['phase']
     freq_list = param['freq_list']
@@ -132,17 +136,17 @@ def error_profile(error_param, param, strain, lines = [], plots = True):
         RRPhase = np.zeros(len(strain.fft_freq)) + PDF/max(PDF)*np.deg2rad(angle)
         error = RRMag *np.exp(1j*RRPhase)
         print(name + ' loaded')
-        lb = centre-70
-        ub = centre+70
+        lb = centre/(2*np.pi)-70
+        ub = centre/(2*np.pi)+70
     else: 
         print('profile not found')
     
     if plots == True:
         fig, (ax1, ax2) = plt.subplots(1,2)
-        fig.suptitle(f'Error Profile: Frequency Centre ($\omega_M$) - {centre:.4f} Hz; Width - {width} Hz')
+        fig.suptitle(f'Error Profile: Frequency Centre ($\omega_M$) - {centre/(2*np.pi):.4f} Hz; Width - {width/(2*np.pi)} Hz')
         colours = plt.cm.tab20(np.linspace(0, 1, len(lines)+2))
-        ax1.plot(strain.fft_freq, np.abs(error), color = colours[0])
-        ax2.plot(strain.fft_freq, np.angle(error,deg=True), color = colours[0])
+        ax1.plot(strain.fft_freq/(2*np.pi), np.abs(error), color = colours[0])
+        ax2.plot(strain.fft_freq/(2*np.pi), np.angle(error,deg=True), color = colours[0])
         if len(lines) > 0:
             w = np.linspace(lb,ub, 1000)
             for i in range(0,len(lines)):
@@ -199,8 +203,8 @@ def error_profile_data(data_loaded_freq, data_loaded_mag, data_loaded_phase, par
     
     fmag = interp1d(data_loaded_freq, data_loaded_mag, bounds_error=False, fill_value=1)
     fphase = interp1d(data_loaded_freq, data_loaded_phase, bounds_error=False, fill_value=0)
-    mag = fmag(strain.fft_freq)
-    phase = fphase(strain.fft_freq)
+    mag = fmag(strain.fft_freq/(2*np.pi))
+    phase = fphase(strain.fft_freq/(2*np.pi))
     error = mag *np.exp(1j*phase)
     lb = 5
     ub = 5000
@@ -209,8 +213,8 @@ def error_profile_data(data_loaded_freq, data_loaded_mag, data_loaded_phase, par
         fig, (ax1, ax2) = plt.subplots(1,2)
         fig.suptitle(f'Error Profile')
         colours = plt.cm.tab20(np.linspace(0, 1, len(lines)+2))
-        ax1.plot(strain.fft_freq, np.abs(error), color = colours[0])
-        ax2.plot(strain.fft_freq, np.angle(error,deg=True), color = colours[0])
+        ax1.plot(strain.fft_freq/(2*np.pi), np.abs(error), color = colours[0])
+        ax2.plot(strain.fft_freq/(2*np.pi), np.angle(error,deg=True), color = colours[0])
         if len(lines) > 0:
             w = np.linspace(lb,ub, 1000)
             for i in range(0,len(lines)):
@@ -260,7 +264,7 @@ def bias_strain(strain, error):
     #now we fft back into the time domain
     biased_strain_data = np.fft.irfft(biased_strain_fft_data, norm="ortho", n=len(strain.time))
     #create a Real Data instance with this data
-    biased_strain = qnm_filter.RealData(biased_strain_data, index=strain.time)
+    biased_strain = RealData(biased_strain_data, index=strain.time)
     return biased_strain
 
 def filter_exact(parameters, strain, modes):
@@ -290,7 +294,7 @@ def filter_exact(parameters, strain, modes):
         Filtered strain.
     """
 
-    fit = qnm_filter.Network()
+    fit = Network()
     fit.original_data['H1'] = strain
     fit.add_filter(mass=parameters['rem_m']*parameters['bbh_m'], chi=parameters['chi'], model_list=modes)
     return fit.filtered_data['H1']
@@ -298,6 +302,8 @@ def filter_exact(parameters, strain, modes):
 def find_likelihood(parameters, biased_strain, noise, strain, modes, mass_inc = 1, delta_inc = 0.01, mass_bounds = [34, 100], chi_bounds = [0, 0.95]): #put mass param into function (for changing bbh_m)
     
     """Find the likelihood and credible region for plotting and calculating the predicted mass and chi values.
+
+    changed
     
     Parameters
     ----------
@@ -340,7 +346,7 @@ def find_likelihood(parameters, biased_strain, noise, strain, modes, mass_inc = 
         Chi mesh grid for plotting.
     """
 
-    fit = qnm_filter.Network(segment_length=parameters['segment_length'], srate=parameters['srate'], t_init = parameters['t_init'])
+    fit = Network(segment_length=parameters['segment_length'], srate=parameters['srate'], t_init = parameters['t_init'])
     fit.original_data['H1'] = biased_strain
     fit.detector_alignment()
     fit.pure_noise = {}
@@ -360,11 +366,84 @@ def find_likelihood(parameters, biased_strain, noise, strain, modes, mass_inc = 
     massspace = np.arange(mass_bounds[0], mass_bounds[1], delta_mass)
     chispace = np.arange(chi_bounds[0], chi_bounds[1], delta_chi)
     mass_grid, chi_grid = np.meshgrid(massspace, chispace)
-    likelihood_data, _ = qnm_filter.parallel_compute(fit, massspace, chispace, 
+    likelihood_data, _ = parallel_compute(fit, massspace, chispace, 
                                                  num_cpu = -1 ,model_list = modes)
-    print(likelihood_data[0])
-    credible_region = qnm_filter.find_credible_region(likelihood_data)
-    return likelihood_data, credible_region, mass_grid, chi_grid
+    #print(likelihood_data[0])
+    credible_region = find_credible_region(likelihood_data)
+    quan = posterior_quantile_2d(likelihood_data, fit, parameters['rem_m']*parameters['bbh_m'], parameters['chi'], model_list = modes)
+    return likelihood_data, credible_region, mass_grid, chi_grid, quan, fit
+
+def find_likelihood_white(parameters, biased_strain, noise, strain, modes, mass_inc = 1, delta_inc = 0.01, mass_bounds = [34, 100], chi_bounds = [0, 0.95]): #put mass param into function (for changing bbh_m)
+    
+    """Find the likelihood and credible region for plotting and calculating the predicted mass and chi values.
+
+    changed
+    
+    Parameters
+    ----------
+    parameters : dict
+        Dictionary containing base parameters. This function uses segment_length, srate, t_init, sigma.
+            segment_length : float
+                Segment length of signal.
+            srate : float
+                Sampling rate.
+            t_init : float
+                Starting time of the segment of the signal to be investigated.
+            sigma : float
+                With no noise injections the noise acfs needs to be manually inputted. This will decide the SNR.
+    biased_strain : qnm_filter.RealData
+        Strain biased by the calibration error.
+    noise : qnm_filter.RealData
+        White noise for SNR purposes.
+    strain : qnm_filter.RealData
+        Unbiased signal strain.
+    modes : list
+        List of free modes to be fitted for.
+    mass_inc : float
+        Mass grid width.
+    delta_inc : float
+        Spin grid width.
+    mass_bounds : list
+        Two values listing the min. and max. values for the mass grid.
+    chi_bounds : list
+        Two values listing the min. and max. values for the chi grid.
+        
+    Returns
+    -------
+    numpy.ndarray
+        Likelihood regions.
+    numpy.ndarray
+        90% credible region.
+    numpy.ndarray
+        Mass mesh grid for plotting.
+    numpy.ndarray
+        Chi mesh grid for plotting.
+    """
+
+    fit = Network(segment_length=parameters['segment_length'], srate=parameters['srate'], t_init = parameters['t_init'])
+    fit.original_data['H1'] = biased_strain
+    fit.detector_alignment()
+    fit.pure_noise = {}
+    fit.pure_noise['H1'] = noise#*error
+    fit.pure_nr = {}
+    fit.pure_nr['H1'] = strain #for SNR purposes
+    fit.condition_data('original_data')
+    fit.condition_data('pure_noise')
+    fit.condition_data('pure_nr')
+    fit.compute_acfs('pure_noise')
+    fit.cholesky_decomposition()
+    fit.first_index()
+    delta_mass = mass_inc
+    delta_chi = delta_inc
+    massspace = np.arange(mass_bounds[0], mass_bounds[1], delta_mass)
+    chispace = np.arange(chi_bounds[0], chi_bounds[1], delta_chi)
+    mass_grid, chi_grid = np.meshgrid(massspace, chispace)
+    likelihood_data, _ = parallel_compute(fit, massspace, chispace, 
+                                                 num_cpu = -1 ,model_list = modes)
+    #print(likelihood_data[0])
+    credible_region = find_credible_region(likelihood_data)
+    quan = posterior_quantile_2d(likelihood_data, fit, parameters['rem_m']*parameters['bbh_m'], parameters['chi'], model_list = modes)
+    return likelihood_data, credible_region, mass_grid, chi_grid, quan, fit
 
 def find_SNR(parameters, biased_strain, noise, strain):
 
@@ -391,7 +470,7 @@ def find_SNR(parameters, biased_strain, noise, strain):
         Returns SNR.
     """
     
-    fit = qnm_filter.Network(segment_length=parameters['segment_length'], srate=parameters['srate'], t_init = 0)
+    fit = Network(segment_length=parameters['segment_length'], srate=parameters['srate'], t_init = 0)
     fit.original_data['H1'] = biased_strain
     fit.detector_alignment()
     fit.pure_noise = {}
@@ -404,6 +483,47 @@ def find_SNR(parameters, biased_strain, noise, strain):
     fit.compute_acfs('pure_noise')
     fit.acfs['H1']*=0
     fit.acfs['H1'][0]=parameters['sigma']**2
+    fit.cholesky_decomposition()
+    fit.first_index()
+    SNR = fit.compute_SNR(fit.truncate_data(fit.original_data)['H1'], fit.truncate_data(fit.pure_nr)['H1'], 'H1', False)
+    return SNR
+
+def find_SNR_white(parameters, biased_strain, noise, strain):
+
+    """Calculates the total SNR from the beginning of the merger. 
+    
+    Parameters
+    ----------
+    parameters : dict
+        Dictionary containing base parameters. This function uses segment_length, srate, t_init, sigma.
+            segment_length : float
+                Segment length of signal.
+            srate : float
+                Sampling rate.
+    biased_strain : qnm_filter.RealData
+        Strain biased by the calibration error.
+    noise : qnm_filter.RealData
+        White noise for SNR purposes.
+    strain : qnm_filter.RealData
+        Unbiased signal strain.
+
+    Returns
+    -------
+    float
+        Returns SNR.
+    """
+    
+    fit = Network(segment_length=parameters['segment_length'], srate=parameters['srate'], t_init = 0)
+    fit.original_data['H1'] = biased_strain
+    fit.detector_alignment()
+    fit.pure_noise = {}
+    fit.pure_noise['H1'] = noise
+    fit.pure_nr = {}
+    fit.pure_nr['H1'] = strain #for SNR purposes
+    fit.condition_data('original_data')
+    fit.condition_data('pure_noise')
+    fit.condition_data('pure_nr')
+    fit.compute_acfs('pure_noise')
     fit.cholesky_decomposition()
     fit.first_index()
     SNR = fit.compute_SNR(fit.truncate_data(fit.original_data)['H1'], fit.truncate_data(fit.pure_nr)['H1'], 'H1', False)
@@ -467,7 +587,71 @@ def likelihood_pair(parameters, signal_noise, signal_no_noise, error, modes, mas
         biased_strain_final = biased_strain
         strain_final = signal_no_noise
         
-    likelihood_data_biased, credible_region_biased, mass_grid, chi_grid = find_likelihood(parameters, biased_strain_final, signal_noise, strain_final, modes, mass_inc, delta_inc, mass_bounds, chi_bounds)
-    likelihood_data_unbiased, credible_region_unbiased, _, _ = find_likelihood(parameters, strain_final, signal_noise, strain_final, modes, mass_inc, delta_inc, mass_bounds, chi_bounds)
-    likelihood_pair = {'biased': [likelihood_data_biased, credible_region_biased, biased_strain], 'unbiased': [likelihood_data_unbiased, credible_region_unbiased, signal_no_noise], 'grid': [mass_grid, chi_grid], 'title': title}
+    likelihood_data_biased, credible_region_biased, mass_grid, chi_grid, quan_biased, fit_biased = find_likelihood(parameters, biased_strain_final, signal_noise, strain_final, modes, mass_inc, delta_inc, mass_bounds, chi_bounds)
+    likelihood_data_unbiased, credible_region_unbiased, _, _, guan_unbiased, fit_unbiased = find_likelihood(parameters, strain_final, signal_noise, strain_final, modes, mass_inc, delta_inc, mass_bounds, chi_bounds)
+    likelihood_pair = {'biased': [likelihood_data_biased, credible_region_biased, biased_strain_final, quan_biased, fit_biased], 'unbiased': [likelihood_data_unbiased, credible_region_unbiased, strain_final, guan_unbiased, fit_unbiased], 'grid': [mass_grid, chi_grid], 'title': title}
+    return likelihood_pair
+
+def likelihood_pair_white(parameters, signal_noise, signal_with_noise, error, modes, mass_inc = 1, delta_inc = 0.01, title = 'Blank', filter_modes = [], mass_bounds = [34, 100], chi_bounds = [0, 0.95]):
+    
+    """Returns likelihood, and credible regions for the biased and unbiased strain pair.
+    
+    Parameters
+    ----------
+    parameters : dict
+        Dictionary containing base parameters. This function uses segment_length, srate, t_init, sigma, rem_m, bbh_m, chi.
+            rem_m : float
+                Remnant mass in terms of total binary system mass.
+            bbm_h : float
+                Total binary system mass in solar mass units.
+            chi : float
+                Dimensionless spin of remnant.
+            segment_length : float
+                Segment length of signal.
+            srate : float
+                Sampling rate.
+            t_init : float
+                Starting time of the segment of the signal to be investigated.
+            sigma : float
+                With no noise injections the noise acfs needs to be manually inputted. This will decide the SNR.
+    noise : qnm_filter.RealData
+        White noise for SNR purposes.
+    signal_no_noise : qnm_filter.RealData
+        Unbiased signal strain.
+    error : numpy.ndarray
+        1-D array containing the calibration error to be multiplied by the fft_data of a qnm_filter.RealData class. Ensure frequency values are the same by using the error creation function correctly.
+    modes : list
+        List of free modes to be fitted for.
+    mass_inc : float
+        Mass grid width.
+    delta_inc : float
+        Spin grid width.
+    title : string
+        Adds a title the resulting dictionary for plotting purposes: e.g. Free: 220 + 221 modes
+    filter_modes : list
+        List of modes to be exactly filtered from the signal before calculating the likelihood. Modes in this list and the modes list cannot overlap.
+    mass_bounds : list
+        Two values listing the min. and max. values for the mass grid.
+    chi_bounds : list
+        Two values listing the min. and max. values for the chi grid.
+            
+    Returns
+    -------
+    dict
+        Creates a likelihood pair dictionary that includes the biased signal's likelihood grid and 90% credible interval, the same for the unbiased signal, the mass and chi mesh grid for plotting and the title, also for plotting purposes.
+    """
+
+    biased_strain = bias_strain(signal_with_noise, error)
+    biased_noise = bias_strain(signal_noise, error)
+
+    if filter_modes:
+        biased_strain_final = filter_exact(parameters, biased_strain, filter_modes)
+        strain_final = filter_exact(parameters, signal_with_noise, filter_modes)
+    else: 
+        biased_strain_final = biased_strain
+        strain_final = signal_with_noise
+        
+    likelihood_data_biased, credible_region_biased, mass_grid, chi_grid, quan_biased, fit_biased = find_likelihood_white(parameters, biased_strain_final, biased_noise, strain_final, modes, mass_inc, delta_inc, mass_bounds, chi_bounds)
+    likelihood_data_unbiased, credible_region_unbiased, _, _, guan_unbiased, fit_unbiased = find_likelihood_white(parameters, strain_final, biased_noise, strain_final, modes, mass_inc, delta_inc, mass_bounds, chi_bounds)
+    likelihood_pair = {'biased': [likelihood_data_biased, credible_region_biased, biased_strain_final, quan_biased, fit_biased], 'unbiased': [likelihood_data_unbiased, credible_region_unbiased, strain_final, guan_unbiased, fit_unbiased], 'grid': [mass_grid, chi_grid], 'title': title}
     return likelihood_pair
