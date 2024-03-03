@@ -229,7 +229,7 @@ def posterior_quantile_2d(array2d, fit, mass, spin, model_list, num_cpu=-1):
         the computed posterior quantile
     """
     this_likelihood = fit.likelihood_vs_mass_spin(mass, spin, model_list=model_list)
-    print(this_likelihood)
+
     # iterate over the inputted log likelihoods and compute the distance of
     # their log probability from the desired value.
     sorted_likelihood = np.sort(array2d.flatten())
@@ -240,14 +240,12 @@ def posterior_quantile_2d(array2d, fit, mass, spin, model_list, num_cpu=-1):
     sorted_probability = np.array(sorted_probability)
     interp_probability = interp1d(sorted_likelihood, sorted_probability)
     if min(sorted_likelihood) <= this_likelihood <= max(sorted_likelihood):
-        print(1)
         return np.exp(interp_probability(this_likelihood))
     elif this_likelihood <= min(sorted_likelihood):
-        print(2)
         return 1
     elif this_likelihood >= max(sorted_likelihood):
-        print(3)
         return 0
+    print('done')
 
 
 def project_to_1d(array2d, delta_mass, delta_chi):
