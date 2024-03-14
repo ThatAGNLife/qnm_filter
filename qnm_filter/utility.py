@@ -245,7 +245,6 @@ def posterior_quantile_2d(array2d, fit, mass, spin, model_list, num_cpu=-1):
         return 1
     elif this_likelihood >= max(sorted_likelihood):
         return 0
-    print('done')
 
 
 def project_to_1d(array2d, delta_mass, delta_chi):
