@@ -102,7 +102,7 @@ def error_profile(error_param, param, strain, lines = [], plots = True):
     Parameters
     ----------
     error_param : dict
-        Dictionary containing base parameters for the calibration error shape. This function uses name, centre, width, amp, and phase.
+        Dictionary containing base parameters for the calibration error shape. This function uses name, centre, width, amp, and phase. The width is equivalent to -2 - 2 sigma.
             name : string
                 Type of error. Currently only houses one type: normal_a_p.
     param : dict
@@ -379,7 +379,7 @@ def find_likelihood_no_noise(parameters, biased_strain, noise, strain, modes, ma
     return likelihood_data, credible_region, mass_grid, chi_grid, quan, fit
 
 def find_likelihood(parameters, biased_strain, noise, strain, modes, mass_inc = 1, delta_inc = 0.01, mass_bounds = [34, 100], chi_bounds = [0, 0.95], cores = -1): #put mass param into function (for changing bbh_m)
-    
+
     """Find the likelihood and credible region for plotting and calculating the predicted mass and chi values.
 
     changed
@@ -598,6 +598,69 @@ def likelihood_pair_no_noise(parameters, signal_noise, signal_no_noise, error, m
                        'unbiased': [likelihood_data_unbiased, credible_region_unbiased, strain_final, guan_unbiased, fit_unbiased], 'grid': [mass_grid, chi_grid], 'title': title}
     return likelihood_pair
 
+def likelihood_biased_no_noise(parameters, signal_noise, signal_no_noise, error, modes, mass_inc = 1, delta_inc = 0.01, title = 'Blank', filter_modes = [], mass_bounds = [34, 100], chi_bounds = [0, 0.95], cores = -1):
+    
+    """Returns likelihood, and credible regions for the biased and unbiased strain pair.
+    
+    Parameters
+    ----------
+    parameters : dict
+        Dictionary containing base parameters. This function uses segment_length, srate, t_init, sigma, rem_m, bbh_m, chi.
+            rem_m : float
+                Remnant mass in terms of total binary system mass.
+            bbm_h : float
+                Total binary system mass in solar mass units.
+            chi : float
+                Dimensionless spin of remnant.
+            segment_length : float
+                Segment length of signal.
+            srate : float
+                Sampling rate.
+            t_init : float
+                Starting time of the segment of the signal to be investigated.
+            sigma : float
+                With no noise injections the noise acfs needs to be manually inputted. This will decide the SNR.
+    noise : qnm_filter.RealData
+        White noise for SNR purposes.
+    signal_no_noise : qnm_filter.RealData
+        Unbiased signal strain.
+    error : numpy.ndarray
+        1-D array containing the calibration error to be multiplied by the fft_data of a qnm_filter.RealData class. Ensure frequency values are the same by using the error creation function correctly.
+    modes : list
+        List of free modes to be fitted for.
+    mass_inc : float
+        Mass grid width.
+    delta_inc : float
+        Spin grid width.
+    title : string
+        Adds a title the resulting dictionary for plotting purposes: e.g. Free: 220 + 221 modes
+    filter_modes : list
+        List of modes to be exactly filtered from the signal before calculating the likelihood. Modes in this list and the modes list cannot overlap.
+    mass_bounds : list
+        Two values listing the min. and max. values for the mass grid.
+    chi_bounds : list
+        Two values listing the min. and max. values for the chi grid.
+            
+    Returns
+    -------
+    dict
+        Creates a likelihood pair dictionary that includes the biased signal's likelihood grid and 90% credible interval, the same for the unbiased signal, the mass and chi mesh grid for plotting and the title, also for plotting purposes.
+    """
+
+    biased_strain = bias_strain(signal_no_noise, error)
+
+    if filter_modes:
+        biased_strain_final = filter_exact(parameters, biased_strain, filter_modes)
+        strain_final = filter_exact(parameters, signal_no_noise, filter_modes)
+    else: 
+        biased_strain_final = biased_strain
+        strain_final = signal_no_noise
+        
+    likelihood_data_biased, credible_region_biased, mass_grid, chi_grid, quan_biased, fit_biased = find_likelihood_no_noise(parameters, biased_strain_final, signal_noise, strain_final, modes, mass_inc, delta_inc, mass_bounds, chi_bounds, cores = cores)
+    likelihood_pair = {'biased': [likelihood_data_biased, credible_region_biased, biased_strain_final, quan_biased, fit_biased], \
+                       'unbiased': [strain_final], 'grid': [mass_grid, chi_grid], 'title': title}
+    return likelihood_pair
+
 def likelihood_pair(parameters, signal_noise, signal_with_noise, signal_without_noise, error, modes, mass_inc = 1, delta_inc = 0.01, title = 'Blank', filter_modes = [], mass_bounds = [34, 100], chi_bounds = [0, 0.95], cores = -1):
     
     """Returns likelihood, and credible regions for the biased and unbiased strain pair.
@@ -658,6 +721,70 @@ def likelihood_pair(parameters, signal_noise, signal_with_noise, signal_without_
         strain_final = signal_with_noise
         
     likelihood_data_biased, credible_region_biased, mass_grid, chi_grid, quan_biased, fit_biased = find_likelihood(parameters, biased_strain_final, biased_noise, signal_without_noise, modes, mass_inc, delta_inc, mass_bounds, chi_bounds, cores=cores)
-    likelihood_data_unbiased, credible_region_unbiased, _, _, guan_unbiased, fit_unbiased = find_likelihood(parameters, strain_final, biased_noise, signal_without_noise, modes, mass_inc, delta_inc, mass_bounds, chi_bounds, cores=cores)
+    likelihood_data_unbiased, credible_region_unbiased, _, _, guan_unbiased, fit_unbiased = find_likelihood(parameters, strain_final, signal_noise, signal_without_noise, modes, mass_inc, delta_inc, mass_bounds, chi_bounds, cores=cores)
     likelihood_pair = {'biased': [likelihood_data_biased, credible_region_biased, biased_strain_final, quan_biased, fit_biased], 'unbiased': [likelihood_data_unbiased, credible_region_unbiased, strain_final, guan_unbiased, fit_unbiased], 'grid': [mass_grid, chi_grid], 'title': title}
+    return likelihood_pair
+
+def likelihood_biased(parameters, signal_noise, signal_with_noise, signal_without_noise, error, modes, mass_inc = 1, delta_inc = 0.01, title = 'Blank', filter_modes = [], mass_bounds = [34, 100], chi_bounds = [0, 0.95], cores = -1):
+    
+    """Returns likelihood, and credible regions for the biased and unbiased strain pair.
+    
+    Parameters
+    ----------
+    parameters : dict
+        Dictionary containing base parameters. This function uses segment_length, srate, t_init, sigma, rem_m, bbh_m, chi.
+            rem_m : float
+                Remnant mass in terms of total binary system mass.
+            bbm_h : float
+                Total binary system mass in solar mass units.
+            chi : float
+                Dimensionless spin of remnant.
+            segment_length : float
+                Segment length of signal.
+            srate : float
+                Sampling rate.
+            t_init : float
+                Starting time of the segment of the signal to be investigated.
+            sigma : float
+                With no noise injections the noise acfs needs to be manually inputted. This will decide the SNR.
+    noise : qnm_filter.RealData
+        White noise for SNR purposes.
+    signal_no_noise : qnm_filter.RealData
+        Unbiased signal strain.
+    error : numpy.ndarray
+        1-D array containing the calibration error to be multiplied by the fft_data of a qnm_filter.RealData class. Ensure frequency values are the same by using the error creation function correctly.
+    modes : list
+        List of free modes to be fitted for.
+    mass_inc : float
+        Mass grid width.
+    delta_inc : float
+        Spin grid width.
+    title : string
+        Adds a title the resulting dictionary for plotting purposes: e.g. Free: 220 + 221 modes
+    filter_modes : list
+        List of modes to be exactly filtered from the signal before calculating the likelihood. Modes in this list and the modes list cannot overlap.
+    mass_bounds : list
+        Two values listing the min. and max. values for the mass grid.
+    chi_bounds : list
+        Two values listing the min. and max. values for the chi grid.
+            
+    Returns
+    -------
+    dict
+        Creates a likelihood pair dictionary that includes the biased signal's likelihood grid and 90% credible interval, the same for the unbiased signal, the mass and chi mesh grid for plotting and the title, also for plotting purposes.
+    """
+
+    biased_strain = bias_strain(signal_with_noise, error)
+    biased_noise = bias_strain(signal_noise, error)
+
+    if filter_modes:
+        biased_strain_final = filter_exact(parameters, biased_strain, filter_modes)
+        strain_final = filter_exact(parameters, signal_with_noise, filter_modes)
+    else: 
+        biased_strain_final = biased_strain
+        strain_final = signal_with_noise
+        
+    likelihood_data_biased, credible_region_biased, mass_grid, chi_grid, quan_biased, fit_biased = find_likelihood(parameters, biased_strain_final, biased_noise, signal_without_noise, modes, mass_inc, delta_inc, mass_bounds, chi_bounds, cores=cores)
+    likelihood_pair = {'biased': [likelihood_data_biased, credible_region_biased, biased_strain_final, quan_biased, fit_biased], 
+                       'unbiased': [strain_final], 'grid': [mass_grid, chi_grid], 'title': title}
     return likelihood_pair
